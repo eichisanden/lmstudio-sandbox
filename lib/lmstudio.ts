@@ -169,7 +169,7 @@ export async function evaluateInterview(prompt: EvaluationPrompt): Promise<Evalu
     } else {
       // モデルがロードされていない場合のみロード
       console.log('No models loaded, attempting to load...');
-      model = await lmstudio.llm.load('google/gemma-3-12b');
+      model = await lmstudio.llm.load('google/gemma-3n-e4b');
     }
     
     const prediction = model.respond([

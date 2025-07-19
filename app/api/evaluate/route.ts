@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { evaluateInterview } from '@/lib/lmstudio';
+
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,6 +14,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 動的インポートを使用してWebSocketの問題を回避
+    const { evaluateInterview } = await import('@/lib/lmstudio');
     const result = await evaluateInterview({ transcript });
 
     return NextResponse.json(result);

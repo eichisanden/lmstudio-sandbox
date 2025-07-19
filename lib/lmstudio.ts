@@ -1,7 +1,5 @@
 import { LMStudioClient } from '@lmstudio/sdk';
 
-export const lmstudio = new LMStudioClient();
-
 export interface EvaluationPrompt {
   transcript: string;
 }
@@ -72,6 +70,9 @@ export async function evaluateInterview(prompt: EvaluationPrompt): Promise<Evalu
   const userPrompt = `以下のカジュアル面談の文字起こしを評価してください：\n\n${prompt.transcript}`;
 
   try {
+    // クライアントを関数内で初期化
+    const lmstudio = new LMStudioClient();
+    
     const model = await lmstudio.llm.load('google/gemma-3-12b');
     const prediction = model.respond([
       { role: 'system', content: systemPrompt },

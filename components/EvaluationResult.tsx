@@ -4,9 +4,11 @@ import { EvaluationResult as EvaluationResultType } from '@/lib/lmstudio';
 
 interface EvaluationResultProps {
   result: EvaluationResultType;
+  firstTokenTime?: number | null;
+  totalTime?: number | null;
 }
 
-export default function EvaluationResult({ result }: EvaluationResultProps) {
+export default function EvaluationResult({ result, firstTokenTime, totalTime }: EvaluationResultProps) {
   const getCategoryLabel = (key: string): string => {
     const labels: Record<string, string> = {
       technicalSkills: '技術スキル',
@@ -104,6 +106,26 @@ export default function EvaluationResult({ result }: EvaluationResultProps) {
         <h3 className="text-xl font-semibold mb-3">採用推奨事項</h3>
         <p className="text-gray-700">{result.recommendation}</p>
       </div>
+
+      {/* パフォーマンス情報 */}
+      {(firstTokenTime || totalTime) && (
+        <div className="bg-gray-100 p-4 rounded-lg text-sm text-gray-600">
+          <div className="flex justify-center space-x-6">
+            {firstTokenTime && (
+              <div>
+                <span className="font-medium">最初のトークンまで:</span>{' '}
+                <span className="text-blue-600">{(firstTokenTime / 1000).toFixed(2)}秒</span>
+              </div>
+            )}
+            {totalTime && (
+              <div>
+                <span className="font-medium">合計生成時間:</span>{' '}
+                <span className="text-blue-600">{(totalTime / 1000).toFixed(2)}秒</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

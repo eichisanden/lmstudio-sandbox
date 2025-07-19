@@ -13,12 +13,18 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const [streamingText, setStreamingText] = useState<string>('');
+  const [firstTokenTime, setFirstTokenTime] = useState<number | null>(null);
+  const [totalTime, setTotalTime] = useState<number | null>(null);
 
   const handleSubmit = async (data: { transcript: string }) => {
     setIsLoading(true);
     setError(null);
     setResult(null);
     setStreamingText('');
+    setFirstTokenTime(null);
+    setTotalTime(null);
+    
+    const startTime = Date.now();
 
     try {
       const response = await fetch('/api/evaluate', {
@@ -44,6 +50,7 @@ export default function Home() {
         const decoder = new TextDecoder();
         let accumulatedText = '';
         let buffer = '';
+        let isFirstToken = true;
 
         if (reader) {
           while (true) {
@@ -64,6 +71,9 @@ export default function Home() {
                 
                 if (data === '[DONE]') {
                   // 完了時、蓄積されたテキストをパースして結果を設定
+                  const totalElapsed = Date.now() - startTime;
+                  setTotalTime(totalElapsed);
+                  
                   try {
                     const jsonMatch = accumulatedText.match(/```json\s*([\s\S]*?)\s*```/);
                     const cleanResponse = jsonMatch ? jsonMatch[1] : accumulatedText;
@@ -79,6 +89,11 @@ export default function Home() {
                   try {
                     const parsedData = JSON.parse(data);
                     if (parsedData.chunk) {
+                      if (isFirstToken) {
+                        const firstTokenElapsed = Date.now() - startTime;
+                        setFirstTokenTime(firstTokenElapsed);
+                        isFirstToken = false;
+                      }
                       accumulatedText += parsedData.chunk;
                       setStreamingText(accumulatedText);
                     } else if (parsedData.error) {
@@ -122,6 +137,9 @@ export default function Home() {
   const handleReset = () => {
     setResult(null);
     setError(null);
+    setStreamingText('');
+    setFirstTokenTime(null);
+    setTotalTime(null);
   };
 
   return (
@@ -143,7 +161,7 @@ export default function Home() {
         )}
 
         {isLoading && streamingText && (
-          <StreamingResult text={streamingText} />
+          <StreamingResult text={streamingText} firstTokenTime={firstTokenTime} />
         )}
 
         {isLoading && !streamingText && (
@@ -169,7 +187,11 @@ export default function Home() {
 
         {result && (
           <>
-            <EvaluationResult result={result} />
+            <EvaluationResult 
+              result={result} 
+              firstTokenTime={firstTokenTime}
+              totalTime={totalTime}
+            />
             <div className="mt-6 text-center">
               <button
                 onClick={handleReset}

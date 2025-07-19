@@ -73,8 +73,22 @@ export async function evaluateInterview(prompt: EvaluationPrompt): Promise<Evalu
     // クライアントを関数内で初期化
     const lmstudio = new LMStudioClient();
     
-    // モデル名は実際にLMStudioにロードされているモデルに合わせて変更してください
-    const model = await lmstudio.llm.load('google/gemma-3-12b');
+    // 既にロードされているモデルを使用するように変更
+    console.log('Getting loaded models...');
+    const loadedModels = await lmstudio.llm.listLoaded();
+    console.log('Loaded models:', loadedModels);
+    
+    let model;
+    if (loadedModels && loadedModels.length > 0) {
+      // 既にロードされているモデルを使用
+      model = loadedModels[0];
+      console.log('Using already loaded model:', model.identifier);
+    } else {
+      // モデルがロードされていない場合のみロード
+      console.log('No models loaded, attempting to load...');
+      model = await lmstudio.llm.load('google/gemma-3-12b');
+    }
+    
     const prediction = model.respond([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
@@ -111,8 +125,15 @@ export async function evaluateInterview(prompt: EvaluationPrompt): Promise<Evalu
       console.error('Response was:', cleanResponse);
       throw new Error('評価結果のパースに失敗しました');
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('LMStudio Error:', error);
-    throw new Error('評価の生成に失敗しました');
+    
+    if (error.message?.includes('insufficient system resources')) {
+      throw new Error('システムリソースが不足しています。LMStudioで事前にモデルをロードしてから再度お試しください。');
+    } else if (error.message?.includes('connection')) {
+      throw new Error('LMStudioに接続できません。LMStudioが起動していることを確認してください。');
+    } else {
+      throw new Error(`評価の生成に失敗しました: ${error.message || '不明なエラー'}`);
+    }
   }
 }

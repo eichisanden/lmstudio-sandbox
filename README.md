@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# カジュアル面談評価アプリ
 
-## Getting Started
+Next.jsとLMStudioを使用した面談評価システムです。
 
-First, run the development server:
+## セットアップ
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. **LMStudioのインストールと起動**
+   - [LMStudio](https://lmstudio.ai/)をダウンロードしてインストール
+   - LMStudioを起動（WebSocketサーバーがws://localhost:1234で起動）
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. **モデルのロード**
+   - LMStudioでモデルを事前にロードしてください
+   - 推奨モデル: google/gemma-3-12b または類似の日本語対応モデル
+   - **重要**: モデルのロードは事前に完了させてください（システムリソースの制約のため）
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. **プロジェクトのセットアップ**
+   ```bash
+   npm install
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. **開発サーバーの起動**
+   ```bash
+   npm run dev
+   ```
 
-## Learn More
+## 使い方
 
-To learn more about Next.js, take a look at the following resources:
+1. ブラウザで http://localhost:3000 にアクセス
+2. 面談の文字起こしを入力（100文字以上）
+3. 「評価を実行」ボタンをクリック
+4. AIによる評価結果を確認
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 評価項目
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **技術スキル**: 技術的な知識や経験
+- **コミュニケーション能力**: 説明の明確さ、対話の円滑さ
+- **文化的適合性**: チームワークや価値観の一致
+- **経験の関連性**: 求められる役割への適合度
 
-## Deploy on Vercel
+## トラブルシューティング
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### "システムリソースが不足しています" エラー
+- LMStudioでモデルを事前にロードしてください
+- メモリ使用量を確認し、必要に応じて他のアプリケーションを終了してください
+- より小さいモデルの使用を検討してください
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### "LMStudioに接続できません" エラー
+- LMStudioが起動していることを確認
+- WebSocketサーバーがws://localhost:1234で稼働していることを確認
+- ファイアウォールやセキュリティソフトが接続をブロックしていないか確認
+
+### JSONパースエラー
+- モデルが日本語と英語の指示を正しく理解できることを確認
+- プロンプトの言語設定を調整することを検討
+
+## 技術スタック
+
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+- LMStudio SDK
+- React Hook Form + Zod

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import InterviewForm from '@/components/InterviewForm';
 import EvaluationResult from '@/components/EvaluationResult';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import StreamingResult from '@/components/StreamingResult';
 import { EvaluationResult as EvaluationResultType } from '@/lib/lmstudio';
 
 export default function Home() {
@@ -11,10 +12,13 @@ export default function Home() {
   const [result, setResult] = useState<EvaluationResultType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [streamingText, setStreamingText] = useState<string>('');
+
   const handleSubmit = async (data: { transcript: string }) => {
     setIsLoading(true);
     setError(null);
     setResult(null);
+    setStreamingText('');
 
     try {
       const response = await fetch('/api/evaluate', {
@@ -30,8 +34,52 @@ export default function Home() {
         throw new Error(errorData.error || '評価の生成に失敗しました');
       }
 
-      const evaluationResult = await response.json();
-      setResult(evaluationResult);
+      // Server-Sent Eventsのストリームを読み取る
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = '';
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              
+              if (data === '[DONE]') {
+                // 完了時、蓄積されたテキストをパースして結果を設定
+                try {
+                  const jsonMatch = accumulatedText.match(/```json\s*([\s\S]*?)\s*```/);
+                  const cleanResponse = jsonMatch ? jsonMatch[1] : accumulatedText;
+                  const evaluationResult = JSON.parse(cleanResponse.trim());
+                  setResult(evaluationResult);
+                  setStreamingText('');
+                } catch (parseError) {
+                  console.error('JSON Parse Error:', parseError);
+                  setError('評価結果の解析に失敗しました');
+                }
+              } else {
+                try {
+                  const parsedData = JSON.parse(data);
+                  if (parsedData.chunk) {
+                    accumulatedText += parsedData.chunk;
+                    setStreamingText(accumulatedText);
+                  } else if (parsedData.error) {
+                    throw new Error(parsedData.error);
+                  }
+                } catch (e) {
+                  console.error('Failed to parse chunk:', e);
+                }
+              }
+            }
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '予期しないエラーが発生しました');
     } finally {
@@ -62,11 +110,15 @@ export default function Home() {
           </div>
         )}
 
-        {isLoading && (
+        {isLoading && streamingText && (
+          <StreamingResult text={streamingText} />
+        )}
+
+        {isLoading && !streamingText && (
           <div className="bg-white rounded-lg shadow-md p-6">
             <LoadingSpinner />
             <p className="text-center text-gray-600 mt-4">
-              評価を生成中です...
+              LMStudioに接続中...
             </p>
           </div>
         )}

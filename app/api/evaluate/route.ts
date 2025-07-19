@@ -14,11 +14,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 動的インポートを使用してWebSocketの問題を回避
-    const { evaluateInterview } = await import('@/lib/lmstudio');
-    const result = await evaluateInterview({ transcript });
+    // ストリーミングレスポンスのためのエンコーダー
+    const encoder = new TextEncoder();
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
 
-    return NextResponse.json(result);
+    // 非同期でストリーミング処理を実行
+    (async () => {
+      try {
+        const { evaluateInterviewStream } = await import('@/lib/lmstudio');
+        
+        await evaluateInterviewStream({ transcript }, async (chunk: string) => {
+          // チャンクをSSE形式で送信
+          await writer.write(encoder.encode(`data: ${JSON.stringify({ chunk })}\n\n`));
+        });
+        
+        // 完了シグナルを送信
+        await writer.write(encoder.encode(`data: [DONE]\n\n`));
+      } catch (error: any) {
+        console.error('Streaming error:', error);
+        await writer.write(encoder.encode(`data: ${JSON.stringify({ error: error.message })}\n\n`));
+      } finally {
+        await writer.close();
+      }
+    })();
+
+    // Server-Sent Eventsとしてレスポンスを返す
+    return new Response(stream.readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (error) {
     console.error('Evaluation error:', error);
     

@@ -29,56 +29,88 @@ export default function Home() {
         body: JSON.stringify(data),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '評価の生成に失敗しました');
-      }
+      // Content-Typeをチェック
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType?.includes('application/json')) {
+        // 通常のJSONレスポンス（エラーの場合）
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || '評価の生成に失敗しました');
+        }
+      } else if (contentType?.includes('text/event-stream')) {
+        // Server-Sent Eventsのストリームを読み取る
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedText = '';
+        let buffer = '';
 
-      // Server-Sent Eventsのストリームを読み取る
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedText = '';
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            
+            // 最後の不完全な行を保持
+            buffer = lines.pop() || '';
 
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
+            for (const line of lines) {
+              if (line.trim() === '') continue;
               
-              if (data === '[DONE]') {
-                // 完了時、蓄積されたテキストをパースして結果を設定
-                try {
-                  const jsonMatch = accumulatedText.match(/```json\s*([\s\S]*?)\s*```/);
-                  const cleanResponse = jsonMatch ? jsonMatch[1] : accumulatedText;
-                  const evaluationResult = JSON.parse(cleanResponse.trim());
-                  setResult(evaluationResult);
-                  setStreamingText('');
-                } catch (parseError) {
-                  console.error('JSON Parse Error:', parseError);
-                  setError('評価結果の解析に失敗しました');
-                }
-              } else {
-                try {
-                  const parsedData = JSON.parse(data);
-                  if (parsedData.chunk) {
-                    accumulatedText += parsedData.chunk;
-                    setStreamingText(accumulatedText);
-                  } else if (parsedData.error) {
-                    throw new Error(parsedData.error);
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim();
+                
+                if (data === '[DONE]') {
+                  // 完了時、蓄積されたテキストをパースして結果を設定
+                  try {
+                    const jsonMatch = accumulatedText.match(/```json\s*([\s\S]*?)\s*```/);
+                    const cleanResponse = jsonMatch ? jsonMatch[1] : accumulatedText;
+                    const evaluationResult = JSON.parse(cleanResponse.trim());
+                    setResult(evaluationResult);
+                    setStreamingText('');
+                  } catch (parseError) {
+                    console.error('JSON Parse Error:', parseError);
+                    console.error('Accumulated text:', accumulatedText);
+                    setError('評価結果の解析に失敗しました');
                   }
-                } catch (e) {
-                  console.error('Failed to parse chunk:', e);
+                } else {
+                  try {
+                    const parsedData = JSON.parse(data);
+                    if (parsedData.chunk) {
+                      accumulatedText += parsedData.chunk;
+                      setStreamingText(accumulatedText);
+                    } else if (parsedData.error) {
+                      throw new Error(parsedData.error);
+                    }
+                  } catch (e) {
+                    console.error('Failed to parse SSE data:', data);
+                    console.error('Parse error:', e);
+                  }
                 }
               }
             }
           }
+          
+          // 残りのバッファを処理
+          if (buffer.trim() && buffer.startsWith('data: ')) {
+            const data = buffer.slice(6).trim();
+            if (data !== '[DONE]') {
+              try {
+                const parsedData = JSON.parse(data);
+                if (parsedData.chunk) {
+                  accumulatedText += parsedData.chunk;
+                  setStreamingText(accumulatedText);
+                }
+              } catch (e) {
+                console.error('Failed to parse final buffer:', e);
+              }
+            }
+          }
         }
+      } else {
+        throw new Error('予期しないレスポンス形式です');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '予期しないエラーが発生しました');

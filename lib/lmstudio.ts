@@ -73,19 +73,44 @@ export async function evaluateInterview(prompt: EvaluationPrompt): Promise<Evalu
     // クライアントを関数内で初期化
     const lmstudio = new LMStudioClient();
     
-    const model = await lmstudio.llm.load('google/gemma-3-12b');
+    // モデル名は実際にLMStudioにロードされているモデルに合わせて変更してください
+    const model = await lmstudio.llm.load('lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF');
     const prediction = model.respond([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ]);
 
     let response = '';
-    for await (const text of prediction) {
-      response += text;
+    console.log('Starting to collect response...');
+    
+    // ストリーミングでレスポンスを収集
+    for await (const fragment of prediction) {
+      console.log('Received fragment:', fragment);
+      if (fragment.content) {
+        response += fragment.content;
+      }
     }
 
-    const result = JSON.parse(response) as EvaluationResult;
-    return result;
+    console.log('Full LMStudio Response:', response);
+    console.log('Response type:', typeof response);
+
+    // レスポンスがJSON文字列かチェック
+    if (!response) {
+      throw new Error('LMStudioからの応答が空です');
+    }
+
+    // JSON内のコードブロックを削除（もしマークダウン形式で返ってきた場合）
+    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+    const cleanResponse = jsonMatch ? jsonMatch[1] : response;
+
+    try {
+      const result = JSON.parse(cleanResponse.trim()) as EvaluationResult;
+      return result;
+    } catch (parseError) {
+      console.error('JSON Parse Error:', parseError);
+      console.error('Response was:', cleanResponse);
+      throw new Error('評価結果のパースに失敗しました');
+    }
   } catch (error) {
     console.error('LMStudio Error:', error);
     throw new Error('評価の生成に失敗しました');

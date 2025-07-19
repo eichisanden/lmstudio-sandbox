@@ -11,8 +11,10 @@
 - React Hook Form + Zod
 
 ## LMStudio設定
-- デフォルトURL: http://localhost:1234/v1
-- lib/lmstudio.ts の model-identifier を実際のモデル名に変更する必要がある
+- WebSocket接続: ws://localhost:1234
+- lib/lmstudio.ts の77行目のモデル名を実際にLMStudioにロードされているモデル名に変更する必要がある
+  - 例: 'lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF'
+  - LMStudioで使用可能なモデル一覧から選択してください
 
 ## 開発時の注意点
 - LMStudioサーバーが起動していることを確認

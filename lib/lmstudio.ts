@@ -74,7 +74,7 @@ export async function evaluateInterview(prompt: EvaluationPrompt): Promise<Evalu
     const lmstudio = new LMStudioClient();
     
     // モデル名は実際にLMStudioにロードされているモデルに合わせて変更してください
-    const model = await lmstudio.llm.load('lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF');
+    const model = await lmstudio.llm.load('google/gemma-3-12b');
     const prediction = model.respond([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
@@ -85,7 +85,7 @@ export async function evaluateInterview(prompt: EvaluationPrompt): Promise<Evalu
     
     // ストリーミングでレスポンスを収集
     for await (const fragment of prediction) {
-      console.log('Received fragment:', fragment);
+      //console.log('Received fragment:', fragment);
       if (fragment.content) {
         response += fragment.content;
       }

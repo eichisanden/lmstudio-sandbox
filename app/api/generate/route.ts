@@ -5,11 +5,20 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { transcript } = body;
+    const { model, systemPrompt, userPrompt } = body;
 
-    if (!transcript || typeof transcript !== 'string' || transcript.length < 100) {
+    if (!model || typeof model !== 'string') {
       return NextResponse.json(
-        { error: '面談内容は100文字以上入力してください' },
+        { error: 'モデルを選択してください' },
+        { status: 400 }
+      );
+    }
+
+    // systemPromptは任意項目
+
+    if (!userPrompt || typeof userPrompt !== 'string') {
+      return NextResponse.json(
+        { error: 'ユーザープロンプトを入力してください' },
         { status: 400 }
       );
     }
@@ -22,9 +31,9 @@ export async function POST(request: NextRequest) {
     // 非同期でストリーミング処理を実行
     (async () => {
       try {
-        const { evaluateInterviewStream } = await import('@/lib/lmstudio');
+        const { generateResponseStream } = await import('@/lib/lmstudio');
         
-        await evaluateInterviewStream({ transcript }, async (chunk: string) => {
+        await generateResponseStream({ model, systemPrompt, userPrompt }, async (chunk: string) => {
           // チャンクをSSE形式で送信
           await writer.write(encoder.encode(`data: ${JSON.stringify({ chunk })}\n\n`));
         });
@@ -51,7 +60,7 @@ export async function POST(request: NextRequest) {
     console.error('Evaluation error:', error);
     
     return NextResponse.json(
-      { error: '評価の生成中にエラーが発生しました。LMStudioが起動していることを確認してください。' },
+      { error: '生成中にエラーが発生しました。LMStudioが起動していることを確認してください。' },
       { status: 500 }
     );
   }

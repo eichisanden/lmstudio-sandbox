@@ -1,22 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import InterviewForm from '@/components/InterviewForm';
-import EvaluationResult from '@/components/EvaluationResult';
+import PromptForm from '@/components/PromptForm';
+import ResponseDisplay from '@/components/ResponseDisplay';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import StreamingResult from '@/components/StreamingResult';
-import { EvaluationResult as EvaluationResultType } from '@/lib/lmstudio';
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<EvaluationResultType | null>(null);
+  const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [streamingText, setStreamingText] = useState<string>('');
   const [firstTokenTime, setFirstTokenTime] = useState<number | null>(null);
   const [totalTime, setTotalTime] = useState<number | null>(null);
 
-  const handleSubmit = async (data: { transcript: string }) => {
+  const handleSubmit = async (data: { model: string; systemPrompt: string; userPrompt: string }) => {
     setIsLoading(true);
     setError(null);
     setResult(null);
@@ -27,7 +26,7 @@ export default function Home() {
     const startTime = Date.now();
 
     try {
-      const response = await fetch('/api/evaluate', {
+      const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,7 +41,7 @@ export default function Home() {
         // 通常のJSONレスポンス（エラーの場合）
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || '評価の生成に失敗しました');
+          throw new Error(errorData.error || '生成に失敗しました');
         }
       } else if (contentType?.includes('text/event-stream')) {
         // Server-Sent Eventsのストリームを読み取る
@@ -70,21 +69,11 @@ export default function Home() {
                 const data = line.slice(6).trim();
                 
                 if (data === '[DONE]') {
-                  // 完了時、蓄積されたテキストをパースして結果を設定
+                  // 完了時、蓄積されたテキストを結果として設定
                   const totalElapsed = Date.now() - startTime;
                   setTotalTime(totalElapsed);
-                  
-                  try {
-                    const jsonMatch = accumulatedText.match(/```json\s*([\s\S]*?)\s*```/);
-                    const cleanResponse = jsonMatch ? jsonMatch[1] : accumulatedText;
-                    const evaluationResult = JSON.parse(cleanResponse.trim());
-                    setResult(evaluationResult);
-                    setStreamingText('');
-                  } catch (parseError) {
-                    console.error('JSON Parse Error:', parseError);
-                    console.error('Accumulated text:', accumulatedText);
-                    setError('評価結果の解析に失敗しました');
-                  }
+                  setResult(accumulatedText);
+                  setStreamingText('');
                 } else {
                   try {
                     const parsedData = JSON.parse(data);
@@ -147,16 +136,16 @@ export default function Home() {
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <header className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            カジュアル面談評価システム
+            AIプロンプトジェネレーター
           </h1>
           <p className="text-gray-600">
-            面談の文字起こしを入力して、AIによる評価を取得しましょう
+            システムプロンプトとユーザープロンプトを入力して、AIによるレスポンスを生成しましょう
           </p>
         </header>
 
         {!result && !isLoading && (
           <div className="bg-white rounded-lg shadow-md p-6">
-            <InterviewForm onSubmit={handleSubmit} isLoading={isLoading} />
+            <PromptForm onSubmit={handleSubmit} isLoading={isLoading} />
           </div>
         )}
 
@@ -187,7 +176,7 @@ export default function Home() {
 
         {result && (
           <>
-            <EvaluationResult 
+            <ResponseDisplay 
               result={result} 
               firstTokenTime={firstTokenTime}
               totalTime={totalTime}
@@ -197,7 +186,7 @@ export default function Home() {
                 onClick={handleReset}
                 className="bg-gray-600 text-white py-2 px-6 rounded-md hover:bg-gray-700 transition-colors"
               >
-                新しい評価を作成
+新しいレスポンスを生成
               </button>
             </div>
           </>

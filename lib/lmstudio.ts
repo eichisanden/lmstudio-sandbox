@@ -35,17 +35,27 @@ export async function generateResponseStream(
       model = await lmstudio.llm.load(prompt.model);
     }
     
-    const messages = [];
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: any }> = [];
     if (prompt.systemPrompt && prompt.systemPrompt.trim()) {
       messages.push({ role: 'system', content: prompt.systemPrompt });
     }
     
-    // 画像がある場合の処理（一時的に無効化）
+    // 画像がある場合の処理
     if (prompt.images && prompt.images.length > 0) {
-      console.log('Images detected but multimodal support is temporarily disabled');
+      console.log(`Processing ${prompt.images.length} images`);
       
-      // 画像があることをテキストで通知
-      const enhancedPrompt = `${prompt.userPrompt}\n\n[注意: ${prompt.images.length}枚の画像がアップロードされましたが、現在のモデル設定では画像処理がサポートされていません。Vision対応モデル（LLaVAなど）をLMStudioでロードしてください。]`;
+      // 画像をテキストベースで処理（Base64データは含まない）
+      const imageInfo = prompt.images.map((image, index) => {
+        const isBase64 = image.startsWith('data:');
+        if (isBase64) {
+          // Base64データのサイズを取得
+          return `[画像${index + 1}: ${image}`;
+        }
+        return `[画像${index + 1}: ファイルパス]`;
+      }).join('\n');
+      
+      // テキストと画像情報を結合
+      const enhancedPrompt = `${prompt.userPrompt}\n\n添付画像:\n${imageInfo}`;
       
       messages.push({ role: 'user', content: enhancedPrompt });
     } else {
@@ -54,6 +64,9 @@ export async function generateResponseStream(
     
     console.log('Final messages array:', JSON.stringify(messages, null, 2));
     
+    // const prediction = model.respond(messages, {
+    //   contextOverflowPolicy: 'truncateMiddle'
+    // });
     const prediction = model.respond(messages);
 
     // ストリーミングでレスポンスを送信

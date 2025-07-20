@@ -1,4 +1,4 @@
-import { LMStudioClient } from '@lmstudio/sdk';
+import { LMStudioClient, FileHandle, ChatMessageInput } from '@lmstudio/sdk';
 
 export interface GeneratePrompt {
   model: string;
@@ -35,7 +35,7 @@ export async function generateResponseStream(
       model = await lmstudio.llm.load(prompt.model);
     }
     
-    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: any }> = [];
+    const messages: ChatMessageInput[] = [];
     if (prompt.systemPrompt && prompt.systemPrompt.trim()) {
       messages.push({ role: 'system', content: prompt.systemPrompt });
     }
@@ -44,30 +44,39 @@ export async function generateResponseStream(
     if (prompt.images && prompt.images.length > 0) {
       console.log(`Processing ${prompt.images.length} images`);
       
-      // 画像をテキストベースで処理（Base64データは含まない）
-      const imageInfo = prompt.images.map((image, index) => {
-        const isBase64 = image.startsWith('data:');
-        if (isBase64) {
-          // Base64データのサイズを取得
-          return `[画像${index + 1}: ${image}`;
+      // 画像をFileHandleに変換
+      const imageHandles: FileHandle[] = [];
+      for (let i = 0; i < prompt.images.length; i++) {
+        const image = prompt.images[i];
+        if (image.startsWith('data:')) {
+          // Base64データからFileHandleを作成
+          const base64Match = image.match(/^data:image\/(\w+);base64,(.+)$/);
+          if (base64Match) {
+            const extension = base64Match[1];
+            const base64Data = base64Match[2];
+            const fileName = `image_${i + 1}.${extension}`;
+            const handle = await lmstudio.files.prepareImageBase64(fileName, base64Data);
+            imageHandles.push(handle);
+            console.log(`Prepared image ${fileName}`);
+          }
         }
-        return `[画像${index + 1}: ファイルパス]`;
-      }).join('\n');
+      }
       
-      // テキストと画像情報を結合
-      const enhancedPrompt = `${prompt.userPrompt}\n\n添付画像:\n${imageInfo}`;
-      
-      messages.push({ role: 'user', content: enhancedPrompt });
+      // ユーザーメッセージに画像を添付
+      messages.push({ 
+        role: 'user', 
+        content: prompt.userPrompt,
+        images: imageHandles
+      });
     } else {
       messages.push({ role: 'user', content: prompt.userPrompt });
     }
     
     console.log('Final messages array:', JSON.stringify(messages, null, 2));
     
-    // const prediction = model.respond(messages, {
-    //   contextOverflowPolicy: 'truncateMiddle'
-    // });
-    const prediction = model.respond(messages);
+    const prediction = model.respond(messages, {
+      contextOverflowPolicy: 'truncateMiddle'
+    });
 
     // ストリーミングでレスポンスを送信
     for await (const fragment of prediction) {

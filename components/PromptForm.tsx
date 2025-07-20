@@ -10,6 +10,7 @@ const promptSchema = z.object({
   systemPrompt: z.string().optional(),
   userPrompt: z.string().min(1, 'ユーザープロンプトを入力してください'),
   images: z.array(z.string()).optional(),
+  files: z.array(z.string()).optional(),
 });
 
 type PromptFormData = z.infer<typeof promptSchema>;
@@ -21,14 +22,15 @@ interface Model {
   owned_by: string;
 }
 
-interface ImageFile {
+interface UploadedFile {
   file: File;
-  preview: string;
+  preview?: string;
   base64: string;
+  type: 'image' | 'pdf' | 'text';
 }
 
 interface PromptFormProps {
-  onSubmit: (data: PromptFormData & { images?: string[] }) => void;
+  onSubmit: (data: PromptFormData & { images?: string[]; files?: string[] }) => void;
   isLoading?: boolean;
 }
 
@@ -38,15 +40,20 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
     // 使用したモデルを保存
     localStorage.setItem('lastUsedModel', data.model);
     
-    // 画像のbase64データを追加
-    const images = uploadedImages.map(img => img.base64);
-    onSubmit({ ...data, images: images.length > 0 ? images : undefined });
+    // ファイルのbase64データを分類して追加
+    const images = uploadedFiles.filter(f => f.type === 'image').map(f => f.base64);
+    const files = uploadedFiles.filter(f => f.type !== 'image').map(f => f.base64);
+    onSubmit({ 
+      ...data, 
+      images: images.length > 0 ? images : undefined,
+      files: files.length > 0 ? files : undefined
+    });
   };
   const [savedSystemPrompts, setSavedSystemPrompts] = useState<string[]>([]);
   const [selectedPromptIndex, setSelectedPromptIndex] = useState<number>(-1);
   const [models, setModels] = useState<Model[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
-  const [uploadedImages, setUploadedImages] = useState<ImageFile[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   
   const {
     register,
@@ -120,43 +127,55 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
     }
   };
   
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files) return;
     
-    const newImages: ImageFile[] = [];
+    const newFiles: UploadedFile[] = [];
     
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // ファイルタイプをチェック
-      if (!file.type.startsWith('image/')) {
-        alert(`${file.name} は画像ファイルではありません。`);
+      // ファイルタイプを判定
+      let fileType: 'image' | 'pdf' | 'text';
+      if (file.type.startsWith('image/')) {
+        fileType = 'image';
+      } else if (file.type === 'application/pdf') {
+        fileType = 'pdf';
+      } else if (file.type.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+        fileType = 'text';
+      } else {
+        alert(`${file.name} はサポートされていないファイルタイプです。`);
         continue;
       }
       
-      // ファイルサイズをチェック (5MBまで)
-      if (file.size > 5 * 1024 * 1024) {
-        alert(`${file.name} のサイズが大きすぎます。5MB以下のファイルを選択してください。`);
+      // ファイルサイズをチェック (10MBまで)
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`${file.name} のサイズが大きすぎます。10MB以下のファイルを選択してください。`);
         continue;
       }
       
       try {
-        const preview = URL.createObjectURL(file);
         const base64 = await fileToBase64(file);
-        
-        newImages.push({
+        const uploadedFile: UploadedFile = {
           file,
-          preview,
-          base64
-        });
+          base64,
+          type: fileType
+        };
+        
+        // 画像の場合はプレビューを作成
+        if (fileType === 'image') {
+          uploadedFile.preview = URL.createObjectURL(file);
+        }
+        
+        newFiles.push(uploadedFile);
       } catch (error) {
-        console.error('Failed to process image:', error);
+        console.error('Failed to process file:', error);
         alert(`${file.name} の処理に失敗しました。`);
       }
     }
     
-    setUploadedImages(prev => [...prev, ...newImages]);
+    setUploadedFiles(prev => [...prev, ...newFiles]);
   };
   
   const fileToBase64 = (file: File): Promise<string> => {
@@ -174,11 +193,13 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
     });
   };
   
-  const removeImage = (index: number) => {
-    setUploadedImages(prev => {
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => {
       const updated = [...prev];
-      // メモリリークを防ぐためpreview URLをリボーク
-      URL.revokeObjectURL(updated[index].preview);
+      // メモリリークを防ぐためpreview URLをリボーク（画像の場合）
+      if (updated[index].preview) {
+        URL.revokeObjectURL(updated[index].preview);
+      }
       updated.splice(index, 1);
       return updated;
     });
@@ -280,15 +301,15 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
       
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          画像アップロード（任意）
+          ファイルアップロード（任意）
         </label>
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
           <input
             type="file"
             id="images"
             multiple
-            accept="image/*"
-            onChange={handleImageUpload}
+            accept="image/*,.pdf,.txt,.md"
+            onChange={handleFileUpload}
             disabled={isLoading}
             className="hidden"
           />
@@ -300,37 +321,53 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
             <span className="text-sm text-gray-500">
-              クリックして画像を選択またはドラッグ&ドロップ
+              クリックしてファイルを選択またはドラッグ&ドロップ
             </span>
             <span className="text-xs text-gray-400">
-              PNG, JPG, GIFなど（最大5MBまで）
+              画像、PDF、テキストファイル（最大10MBまで）
             </span>
           </label>
         </div>
         
-        {uploadedImages.length > 0 && (
+        {uploadedFiles.length > 0 && (
           <div className="mt-4">
             <p className="text-sm font-medium text-gray-700 mb-2">
-              アップロードされた画像 ({uploadedImages.length}枚)
+              アップロードされたファイル ({uploadedFiles.length}件)
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {uploadedImages.map((imageFile, index) => (
+              {uploadedFiles.map((uploadedFile, index) => (
                 <div key={index} className="relative group">
-                  <img
-                    src={imageFile.preview}
-                    alt={`Upload ${index + 1}`}
-                    className="w-full h-24 object-cover rounded-lg border"
-                  />
+                  {uploadedFile.type === 'image' && uploadedFile.preview ? (
+                    <img
+                      src={uploadedFile.preview}
+                      alt={`Upload ${index + 1}`}
+                      className="w-full h-24 object-cover rounded-lg border"
+                    />
+                  ) : (
+                    <div className="w-full h-24 rounded-lg border flex items-center justify-center bg-gray-100">
+                      {uploadedFile.type === 'pdf' ? (
+                        <svg className="w-12 h-12 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M4 18h12a2 2 0 002-2V6.414A2 2 0 0017.414 5L14 1.586A2 2 0 0012.586 1H4a2 2 0 00-2 2v13a2 2 0 002 2z"/>
+                          <path d="M14 2v4a1 1 0 001 1h4"/>
+                        </svg>
+                      ) : (
+                        <svg className="w-12 h-12 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+                          <path fillRule="evenodd" d="M4 5a2 2 0 012-2 1 1 0 000 2H4v10h12V5h-2a1 1 0 100-2 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5z"/>
+                        </svg>
+                      )}
+                    </div>
+                  )}
                   <button
                     type="button"
-                    onClick={() => removeImage(index)}
+                    onClick={() => removeFile(index)}
                     disabled={isLoading}
                     className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ×
                   </button>
                   <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg truncate">
-                    {imageFile.file.name}
+                    {uploadedFile.file.name}
                   </div>
                 </div>
               ))}

@@ -5,6 +5,7 @@ export interface GeneratePrompt {
   systemPrompt?: string;
   userPrompt: string;
   images?: string[];
+  files?: string[];
 }
 
 export async function generateResponseStream(
@@ -40,12 +41,13 @@ export async function generateResponseStream(
       messages.push({ role: 'system', content: prompt.systemPrompt });
     }
     
-    // 画像がある場合の処理
+    // ファイル処理
+    const allFileHandles: FileHandle[] = [];
+    
+    // 画像の処理
     if (prompt.images && prompt.images.length > 0) {
       console.log(`Processing ${prompt.images.length} images`);
       
-      // 画像をFileHandleに変換
-      const imageHandles: FileHandle[] = [];
       for (let i = 0; i < prompt.images.length; i++) {
         const image = prompt.images[i];
         if (image.startsWith('data:')) {
@@ -56,17 +58,49 @@ export async function generateResponseStream(
             const base64Data = base64Match[2];
             const fileName = `image_${i + 1}.${extension}`;
             const handle = await lmstudio.files.prepareImageBase64(fileName, base64Data);
-            imageHandles.push(handle);
+            allFileHandles.push(handle);
             console.log(`Prepared image ${fileName}`);
           }
         }
       }
+    }
+    
+    // その他のファイル（PDF、テキストなど）の処理
+    if (prompt.files && prompt.files.length > 0) {
+      console.log(`Processing ${prompt.files.length} files`);
       
-      // ユーザーメッセージに画像を添付
+      for (let i = 0; i < prompt.files.length; i++) {
+        const file = prompt.files[i];
+        if (file.startsWith('data:')) {
+          // Base64データからファイルを判定
+          const base64Match = file.match(/^data:([^;]+);base64,(.+)$/);
+          if (base64Match) {
+            const mimeType = base64Match[1];
+            const base64Data = base64Match[2];
+            let extension = 'txt';
+            
+            // MIMEタイプから拡張子を判定
+            if (mimeType === 'application/pdf') {
+              extension = 'pdf';
+            } else if (mimeType.startsWith('text/')) {
+              extension = 'txt';
+            }
+            
+            const fileName = `file_${i + 1}.${extension}`;
+            const handle = await lmstudio.files.prepareFileBase64(fileName, base64Data);
+            allFileHandles.push(handle);
+            console.log(`Prepared file ${fileName}`);
+          }
+        }
+      }
+    }
+    
+    // メッセージを作成
+    if (allFileHandles.length > 0) {
       messages.push({ 
         role: 'user', 
         content: prompt.userPrompt,
-        images: imageHandles
+        images: allFileHandles
       });
     } else {
       messages.push({ role: 'user', content: prompt.userPrompt });

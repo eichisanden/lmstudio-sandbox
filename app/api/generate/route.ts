@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { model, systemPrompt, userPrompt, images } = body;
+    const { model, systemPrompt, userPrompt, images, files } = body;
 
     if (!model || typeof model !== 'string') {
       return NextResponse.json(
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
       try {
         const { generateResponseStream } = await import('@/lib/lmstudio');
         
-        await generateResponseStream({ model, systemPrompt, userPrompt, images }, async (chunk: string) => {
+        await generateResponseStream({ model, systemPrompt, userPrompt, images, files }, async (chunk: string) => {
           // チャンクをSSE形式で送信
           await writer.write(encoder.encode(`data: ${JSON.stringify({ chunk })}\n\n`));
         });

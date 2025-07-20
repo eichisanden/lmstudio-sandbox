@@ -1,4 +1,5 @@
 import { LMStudioClient, FileHandle, ChatMessageInput } from '@lmstudio/sdk';
+import { extractTextFromPDF } from './pdf-utils';
 
 export interface GeneratePrompt {
   model: string;
@@ -66,44 +67,65 @@ export async function generateResponseStream(
     }
     
     // その他のファイル（PDF、テキストなど）の処理
+    let fileContents: string[] = [];
     if (prompt.files && prompt.files.length > 0) {
       console.log(`Processing ${prompt.files.length} files`);
       
       for (let i = 0; i < prompt.files.length; i++) {
         const file = prompt.files[i];
+        console.log(`File ${i + 1} starts with:`, file.substring(0, 50));
+        
         if (file.startsWith('data:')) {
           // Base64データからファイルを判定
           const base64Match = file.match(/^data:([^;]+);base64,(.+)$/);
           if (base64Match) {
             const mimeType = base64Match[1];
             const base64Data = base64Match[2];
-            let extension = 'txt';
+            console.log(`File ${i + 1} MIME type:`, mimeType);
             
-            // MIMEタイプから拡張子を判定
+            // MIMEタイプに応じて処理
             if (mimeType === 'application/pdf') {
-              extension = 'pdf';
+              try {
+                // PDFからテキストを抽出
+                const pdfText = await extractTextFromPDF(file);
+                fileContents.push(`\n[PDFファイル ${i + 1} の内容]:\n${pdfText}\n`);
+                console.log(`Extracted text from PDF file ${i + 1}`);
+              } catch (error) {
+                console.error(`Failed to extract text from PDF ${i + 1}:`, error);
+                fileContents.push(`\n[PDFファイル ${i + 1}: 読み取りエラー]\n`);
+              }
             } else if (mimeType.startsWith('text/')) {
-              extension = 'txt';
+              // テキストファイルをデコード
+              try {
+                const textContent = Buffer.from(base64Data, 'base64').toString('utf-8');
+                fileContents.push(`\n[テキストファイル ${i + 1} の内容]:\n${textContent}\n`);
+                console.log(`Decoded text file ${i + 1}`);
+              } catch (error) {
+                console.error(`Failed to decode text file ${i + 1}:`, error);
+                fileContents.push(`\n[テキストファイル ${i + 1}: 読み取りエラー]\n`);
+              }
             }
-            
-            const fileName = `file_${i + 1}.${extension}`;
-            const handle = await lmstudio.files.prepareFileBase64(fileName, base64Data);
-            allFileHandles.push(handle);
-            console.log(`Prepared file ${fileName}`);
           }
         }
       }
     }
     
     // メッセージを作成
+    let finalContent = prompt.userPrompt;
+    
+    // ファイルコンテンツがある場合は追加
+    if (fileContents.length > 0) {
+      finalContent += '\n\n--- 添付ファイル ---' + fileContents.join('');
+    }
+    
     if (allFileHandles.length > 0) {
       messages.push({ 
         role: 'user', 
-        content: prompt.userPrompt,
+        content: finalContent,
         images: allFileHandles
       });
     } else {
-      messages.push({ role: 'user', content: prompt.userPrompt });
+      messages.push({ role: 'user', content: finalContent });
     }
     
     console.log('Final messages array:', JSON.stringify(messages, null, 2));

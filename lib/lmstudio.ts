@@ -4,6 +4,7 @@ export interface GeneratePrompt {
   model: string;
   systemPrompt?: string;
   userPrompt: string;
+  images?: string[];
 }
 
 export async function generateResponseStream(
@@ -38,7 +39,20 @@ export async function generateResponseStream(
     if (prompt.systemPrompt && prompt.systemPrompt.trim()) {
       messages.push({ role: 'system', content: prompt.systemPrompt });
     }
-    messages.push({ role: 'user', content: prompt.userPrompt });
+    
+    // 画像がある場合の処理（一時的に無効化）
+    if (prompt.images && prompt.images.length > 0) {
+      console.log('Images detected but multimodal support is temporarily disabled');
+      
+      // 画像があることをテキストで通知
+      const enhancedPrompt = `${prompt.userPrompt}\n\n[注意: ${prompt.images.length}枚の画像がアップロードされましたが、現在のモデル設定では画像処理がサポートされていません。Vision対応モデル（LLaVAなど）をLMStudioでロードしてください。]`;
+      
+      messages.push({ role: 'user', content: enhancedPrompt });
+    } else {
+      messages.push({ role: 'user', content: prompt.userPrompt });
+    }
+    
+    console.log('Final messages array:', JSON.stringify(messages, null, 2));
     
     const prediction = model.respond(messages);
 

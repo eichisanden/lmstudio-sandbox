@@ -9,6 +9,7 @@ const promptSchema = z.object({
   model: z.string().min(1, 'モデルを選択してください'),
   systemPrompt: z.string().optional(),
   userPrompt: z.string().min(1, 'ユーザープロンプトを入力してください'),
+  images: z.array(z.string()).optional(),
 });
 
 type PromptFormData = z.infer<typeof promptSchema>;
@@ -20,8 +21,14 @@ interface Model {
   owned_by: string;
 }
 
+interface ImageFile {
+  file: File;
+  preview: string;
+  base64: string;
+}
+
 interface PromptFormProps {
-  onSubmit: (data: PromptFormData) => void;
+  onSubmit: (data: PromptFormData & { images?: string[] }) => void;
   isLoading?: boolean;
 }
 
@@ -30,12 +37,16 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
   const handleFormSubmit = (data: PromptFormData) => {
     // 使用したモデルを保存
     localStorage.setItem('lastUsedModel', data.model);
-    onSubmit(data);
+    
+    // 画像のbase64データを追加
+    const images = uploadedImages.map(img => img.base64);
+    onSubmit({ ...data, images: images.length > 0 ? images : undefined });
   };
   const [savedSystemPrompts, setSavedSystemPrompts] = useState<string[]>([]);
   const [selectedPromptIndex, setSelectedPromptIndex] = useState<number>(-1);
   const [models, setModels] = useState<Model[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [uploadedImages, setUploadedImages] = useState<ImageFile[]>([]);
   
   const {
     register,
@@ -107,6 +118,70 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
     if (selectedPromptIndex === index) {
       setSelectedPromptIndex(-1);
     }
+  };
+  
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+    
+    const newImages: ImageFile[] = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      // ファイルタイプをチェック
+      if (!file.type.startsWith('image/')) {
+        alert(`${file.name} は画像ファイルではありません。`);
+        continue;
+      }
+      
+      // ファイルサイズをチェック (5MBまで)
+      if (file.size > 5 * 1024 * 1024) {
+        alert(`${file.name} のサイズが大きすぎます。5MB以下のファイルを選択してください。`);
+        continue;
+      }
+      
+      try {
+        const preview = URL.createObjectURL(file);
+        const base64 = await fileToBase64(file);
+        
+        newImages.push({
+          file,
+          preview,
+          base64
+        });
+      } catch (error) {
+        console.error('Failed to process image:', error);
+        alert(`${file.name} の処理に失敗しました。`);
+      }
+    }
+    
+    setUploadedImages(prev => [...prev, ...newImages]);
+  };
+  
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to read file as base64'));
+        }
+      };
+      reader.onerror = reject;
+    });
+  };
+  
+  const removeImage = (index: number) => {
+    setUploadedImages(prev => {
+      const updated = [...prev];
+      // メモリリークを防ぐためpreview URLをリボーク
+      URL.revokeObjectURL(updated[index].preview);
+      updated.splice(index, 1);
+      return updated;
+    });
   };
 
   return (
@@ -200,6 +275,67 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
         />
         {errors.userPrompt && (
           <p className="mt-1 text-sm text-red-600">{errors.userPrompt.message}</p>
+        )}
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          画像アップロード（任意）
+        </label>
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+          <input
+            type="file"
+            id="images"
+            multiple
+            accept="image/*"
+            onChange={handleImageUpload}
+            disabled={isLoading}
+            className="hidden"
+          />
+          <label
+            htmlFor="images"
+            className="cursor-pointer flex flex-col items-center justify-center space-y-2"
+          >
+            <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            <span className="text-sm text-gray-500">
+              クリックして画像を選択またはドラッグ&ドロップ
+            </span>
+            <span className="text-xs text-gray-400">
+              PNG, JPG, GIFなど（最大5MBまで）
+            </span>
+          </label>
+        </div>
+        
+        {uploadedImages.length > 0 && (
+          <div className="mt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              アップロードされた画像 ({uploadedImages.length}枚)
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {uploadedImages.map((imageFile, index) => (
+                <div key={index} className="relative group">
+                  <img
+                    src={imageFile.preview}
+                    alt={`Upload ${index + 1}`}
+                    className="w-full h-24 object-cover rounded-lg border"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(index)}
+                    disabled={isLoading}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    ×
+                  </button>
+                  <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg truncate">
+                    {imageFile.file.name}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
       

@@ -15,7 +15,7 @@ export default function Home() {
   const [firstTokenTime, setFirstTokenTime] = useState<number | null>(null);
   const [totalTime, setTotalTime] = useState<number | null>(null);
 
-  const handleSubmit = async (data: { model: string; systemPrompt: string; userPrompt: string }) => {
+  const handleSubmit = async (data: { model: string; systemPrompt?: string; userPrompt: string; images?: string[] }) => {
     setIsLoading(true);
     setError(null);
     setResult(null);

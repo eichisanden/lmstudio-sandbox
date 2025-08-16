@@ -17,9 +17,8 @@ type PromptFormData = z.infer<typeof promptSchema>;
 
 interface Model {
   id: string;
-  object: string;
-  created: number;
-  owned_by: string;
+  name: string;
+  loaded: boolean;
 }
 
 interface UploadedFile {
@@ -53,6 +52,7 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
   const [selectedPromptIndex, setSelectedPromptIndex] = useState<number>(-1);
   const [models, setModels] = useState<Model[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   
   const {
@@ -82,19 +82,33 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
       const lastUsedModel = localStorage.getItem('lastUsedModel');
       if (lastUsedModel && models.some(m => m.id === lastUsedModel)) {
         setValue('model', lastUsedModel);
+      } else {
+        // 最後に使用したモデルがない、または利用不可の場合、ロード済みのモデルを優先的に選択
+        const loadedModel = models.find(m => m.loaded);
+        if (loadedModel) {
+          setValue('model', loadedModel.id);
+        }
       }
     }
   }, [models, setValue]);
   
   const fetchModels = async () => {
+    setModelsLoading(true);
+    setModelsError(null);
     try {
       const response = await fetch('/api/models');
+      const data = await response.json();
       if (response.ok) {
-        const data = await response.json();
         setModels(data.data || []);
+        if ((data.data || []).length === 0) {
+          setModelsError('利用可能なモデルが見つかりません。LMStudioでモデルをダウンロードしてください。');
+        }
+      } else {
+        throw new Error(data.error || 'モデルの取得に失敗しました');
       }
     } catch (error) {
       console.error('Failed to fetch models:', error);
+      setModelsError(error instanceof Error ? error.message : 'モデルの取得中に不明なエラーが発生しました');
     } finally {
       setModelsLoading(false);
     }
@@ -136,7 +150,6 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // ファイルタイプを判定
       let fileType: 'image' | 'pdf' | 'text';
       if (file.type.startsWith('image/')) {
         fileType = 'image';
@@ -149,7 +162,6 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
         continue;
       }
       
-      // ファイルサイズをチェック (10MBまで)
       if (file.size > 10 * 1024 * 1024) {
         alert(`${file.name} のサイズが大きすぎます。10MB以下のファイルを選択してください。`);
         continue;
@@ -157,17 +169,11 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
       
       try {
         const base64 = await fileToBase64(file);
-        const uploadedFile: UploadedFile = {
-          file,
-          base64,
-          type: fileType
-        };
+        const uploadedFile: UploadedFile = { file, base64, type: fileType };
         
-        // 画像の場合はプレビューを作成
         if (fileType === 'image') {
           uploadedFile.preview = URL.createObjectURL(file);
         }
-        
         newFiles.push(uploadedFile);
       } catch (error) {
         console.error('Failed to process file:', error);
@@ -196,7 +202,6 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
   const removeFile = (index: number) => {
     setUploadedFiles(prev => {
       const updated = [...prev];
-      // メモリリークを防ぐためpreview URLをリボーク（画像の場合）
       if (updated[index].preview) {
         URL.revokeObjectURL(updated[index].preview);
       }
@@ -215,17 +220,25 @@ export default function PromptForm({ onSubmit, isLoading = false }: PromptFormPr
           id="model"
           {...register('model')}
           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-          disabled={isLoading || modelsLoading}
+          disabled={isLoading || modelsLoading || models.length === 0}
         >
-          <option value="">モデルを選択してください...</option>
+          <option value="">
+            {modelsLoading ? 'モデルを読み込み中...' : 'モデルを選択してください...'}
+          </option>
           {models.map((model) => (
             <option key={model.id} value={model.id}>
-              {model.id}
+              {model.name} {model.loaded ? '(ロード済み)' : ''}
             </option>
           ))}
         </select>
         {errors.model && (
           <p className="mt-1 text-sm text-red-600">{errors.model.message}</p>
+        )}
+        {modelsError && (
+          <div className="mt-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-3">
+            <p>{modelsError}</p>
+            <p className="mt-1">LMStudioが起動しており、モデルがロードされていることを確認してください。</p>
+          </div>
         )}
       </div>
       
